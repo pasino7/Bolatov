@@ -2,21 +2,30 @@ import os
 import random
 import sqlite3
 
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup
 from telegram.ext import (
     ApplicationBuilder,
     CommandHandler,
     CallbackQueryHandler,
-    ContextTypes
+    MessageHandler,
+    ContextTypes,
+    filters
 )
 
 from openpyxl import Workbook
 
 TOKEN = os.environ.get("TOKEN")
-ADMIN_ID = int(os.environ.get("ADMIN_ID", "0"))
 
 # =========================
-# DATABASE
+# ADMINS
+# =========================
+ADMIN_IDS = list(map(int, os.environ.get("ADMIN_IDS", "").split(",")))
+
+def is_admin(user_id):
+    return user_id in ADMIN_IDS
+
+# =========================
+# DB
 # =========================
 conn = sqlite3.connect("quiz.db", check_same_thread=False)
 cursor = conn.cursor()
@@ -33,7 +42,7 @@ CREATE TABLE IF NOT EXISTS users (
 conn.commit()
 
 # =========================
-# QUESTION BANK (НЕ МЕНЯЛ)
+# QUESTION BANK (НЕ ТРОГАЮ)
 # =========================
 question_bank = {
     "Информатика": {
@@ -68,7 +77,7 @@ question_bank = {
 user_state = {}
 
 # =========================
-# DB
+# DB FUNCTIONS
 # =========================
 def add_user(user_id, username):
     cursor.execute("INSERT OR IGNORE INTO users VALUES (?, ?, 0, 0, 0)", (user_id, username))
@@ -82,13 +91,7 @@ def update_score(user_id, correct):
     conn.commit()
 
 # =========================
-# ADMIN CHECK
-# =========================
-def is_admin(user_id):
-    return user_id == ADMIN_ID
-
-# =========================
-# EXPORT EXCEL
+# EXCEL
 # =========================
 def export_excel():
     wb = Workbook()
@@ -121,7 +124,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 # =========================
-# BUTTON
+# QUIZ
 # =========================
 async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
@@ -176,8 +179,6 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await send_question(query.message, user_id)
 
 # =========================
-# QUESTION
-# =========================
 async def send_question(message, user_id):
 
     state = user_state[user_id]
@@ -191,15 +192,14 @@ async def send_question(message, user_id):
         return
 
     q = pool[i]
-
     keyboard = [[InlineKeyboardButton(o, callback_data=o)] for o in q["o"]]
 
     await message.reply_text(f"❓ {q['q']}", reply_markup=InlineKeyboardMarkup(keyboard))
 
 # =========================
-# EXPORT COMMAND (ADMIN)
+# ADMIN PANEL
 # =========================
-async def export(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     user_id = update.effective_user.id
 
@@ -207,11 +207,44 @@ async def export(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("⛔ Нет доступа")
         return
 
-    export_excel()
+    keyboard = [
+        ["📊 Статистика"],
+        ["📁 Excel отчет"],
+        ["🏆 Топ пользователей"]
+    ]
 
-    await update.message.reply_document(
-        document=open("results.xlsx", "rb")
+    await update.message.reply_text(
+        "👨‍🏫 Админ панель:",
+        reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
     )
+
+# =========================
+async def admin_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+    user_id = update.effective_user.id
+    text = update.message.text
+
+    if not is_admin(user_id):
+        return
+
+    if text == "📊 Статистика":
+        cursor.execute("SELECT COUNT(*), SUM(score) FROM users")
+        data = cursor.fetchone()
+        await update.message.reply_text(f"👥 Пользователей: {data[0]}\n🏆 Баллы: {data[1]}")
+
+    elif text == "📁 Excel отчет":
+        export_excel()
+        await update.message.reply_document(open("results.xlsx", "rb"))
+
+    elif text == "🏆 Топ пользователей":
+        cursor.execute("SELECT username, score FROM users ORDER BY score DESC LIMIT 10")
+        top = cursor.fetchall()
+
+        text_top = "🏆 ТОП:\n\n"
+        for i, row in enumerate(top, 1):
+            text_top += f"{i}. {row[0]} — {row[1]}\n"
+
+        await update.message.reply_text(text_top)
 
 # =========================
 # MAIN
@@ -221,14 +254,10 @@ def main():
     app = ApplicationBuilder().token(TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("export", export))
+    app.add_handler(CommandHandler("admin", admin_panel))
+
     app.add_handler(CallbackQueryHandler(button))
-
-    print("Bot started")
-    app.run_polling()
-
-if __name__ == "__main__":
-    main()
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, admin_buttons))
 
     print("Bot started")
     app.run_polling()
