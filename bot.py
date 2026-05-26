@@ -1,9 +1,6 @@
 import os
 import random
 import sqlite3
-from io import BytesIO
-
-from openpyxl import Workbook
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
@@ -13,9 +10,6 @@ from telegram.ext import (
     ContextTypes
 )
 
-# =========================
-# TOKEN (RAILWAY ENV)
-# =========================
 TOKEN = os.environ.get("TOKEN")
 
 # =========================
@@ -36,21 +30,33 @@ CREATE TABLE IF NOT EXISTS users (
 conn.commit()
 
 # =========================
-# QUESTIONS
+# QUESTIONS (20 на каждый класс)
 # =========================
 question_bank = {
-    "easy": [
-        {"q": "2 + 2 = ?", "o": ["4", "5", "6"], "a": "4"},
-        {"q": "5 + 3 = ?", "o": ["8", "7", "6"], "a": "8"},
-    ],
-    "medium": [
-        {"q": "12 × 2 = ?", "o": ["24", "20", "22"], "a": "24"},
-        {"q": "18 ÷ 2 = ?", "o": ["9", "8", "7"], "a": "9"},
-    ],
-    "hard": [
-        {"q": "√81 = ?", "o": ["9", "8", "7"], "a": "9"},
-        {"q": "15² = ?", "o": ["225", "200", "210"], "a": "225"},
-    ]
+
+    "Информатика": {
+        "5": [
+            *[{"q": f"Информатика 5 класс вопрос {i+1}", "o": ["A", "B", "C", "D"], "a": "A"} for i in range(20)]
+        ],
+        "6": [
+            *[{"q": f"Информатика 6 класс вопрос {i+1}", "o": ["A", "B", "C", "D"], "a": "A"} for i in range(20)]
+        ],
+        "7": [
+            *[{"q": f"Информатика 7 класс вопрос {i+1}", "o": ["A", "B", "C", "D"], "a": "A"} for i in range(20)]
+        ],
+    },
+
+    "Математика": {
+        "5": [
+            *[{"q": f"Математика 5 класс вопрос {i+1}", "o": ["1", "2", "3", "4"], "a": "1"} for i in range(20)]
+        ],
+        "6": [
+            *[{"q": f"Математика 6 класс вопрос {i+1}", "o": ["1", "2", "3", "4"], "a": "1"} for i in range(20)]
+        ],
+        "7": [
+            *[{"q": f"Математика 7 класс вопрос {i+1}", "o": ["1", "2", "3", "4"], "a": "1"} for i in range(20)]
+        ],
+    }
 }
 
 # =========================
@@ -59,7 +65,7 @@ question_bank = {
 user_state = {}
 
 # =========================
-# DB FUNCTIONS
+# DB
 # =========================
 def add_user(user_id, username):
     cursor.execute("""
@@ -70,112 +76,94 @@ def add_user(user_id, username):
 def update_score(user_id, correct):
     if correct:
         cursor.execute("""
-        UPDATE users
-        SET score = score + 1,
-            correct_answers = correct_answers + 1
-        WHERE user_id = ?
+        UPDATE users SET score=score+1, correct_answers=correct_answers+1
+        WHERE user_id=?
         """, (user_id,))
     else:
         cursor.execute("""
-        UPDATE users
-        SET wrong_answers = wrong_answers + 1
-        WHERE user_id = ?
+        UPDATE users SET wrong_answers=wrong_answers+1
+        WHERE user_id=?
         """, (user_id,))
     conn.commit()
 
-def get_top():
-    cursor.execute("""
-    SELECT username, score
-    FROM users
-    ORDER BY score DESC
-    LIMIT 10
-    """)
-    return cursor.fetchall()
-
-def get_user_stats(user_id):
-    cursor.execute("""
-    SELECT score, correct_answers, wrong_answers
-    FROM users
-    WHERE user_id = ?
-    """, (user_id,))
-    return cursor.fetchone()
-
 # =========================
-# EXCEL EXPORT (RAILWAY SAFE)
-# =========================
-def export_excel():
-    cursor.execute("""
-    SELECT username, score, correct_answers, wrong_answers
-    FROM users
-    """)
-
-    rows = cursor.fetchall()
-
-    wb = Workbook()
-    ws = wb.active
-    ws.title = "Results"
-
-    ws.append(["Username", "Score", "Correct", "Wrong"])
-
-    for r in rows:
-        ws.append(r)
-
-    file_stream = BytesIO()
-    wb.save(file_stream)
-    file_stream.seek(0)
-
-    return file_stream
-
-# =========================
-# START
+# START (выбор предмета)
 # =========================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
     user = update.effective_user
     add_user(user.id, user.username)
 
     keyboard = [
-        [InlineKeyboardButton("Легкий", callback_data="easy")],
-        [InlineKeyboardButton("Средний", callback_data="medium")],
-        [InlineKeyboardButton("Сложный", callback_data="hard")]
+        [InlineKeyboardButton("📘 Информатика", callback_data="sub_Информатика")],
+        [InlineKeyboardButton("📗 Математика", callback_data="sub_Математика")]
     ]
 
     await update.message.reply_text(
-        "🎮 Выбери сложность:",
+        "Выбери предмет:",
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
 
 # =========================
-# BUTTON HANDLER
+# HANDLER
 # =========================
 async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
     query = update.callback_query
     await query.answer()
 
     user_id = query.from_user.id
     data = query.data
 
-    # выбор сложности
-    if data in question_bank:
-        pool = random.sample(question_bank[data], len(question_bank[data]))
+    # =====================
+    # SUBJECT SELECT
+    # =====================
+    if data.startswith("sub_"):
+        subject = data.split("_")[1]
 
-        user_state[user_id] = {
-            "level": data,
-            "pool": pool,
-            "index": 0
-        }
+        user_state[user_id] = {"subject": subject}
+
+        keyboard = [
+            [InlineKeyboardButton("5 класс", callback_data="cls_5")],
+            [InlineKeyboardButton("6 класс", callback_data="cls_6")],
+            [InlineKeyboardButton("7 класс", callback_data="cls_7")]
+        ]
+
+        await query.message.reply_text(
+            "Выбери класс:",
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
+        return
+
+    # =====================
+    # CLASS SELECT
+    # =====================
+    if data.startswith("cls_"):
+        class_num = data.split("_")[1]
+
+        subject = user_state[user_id]["subject"]
+
+        pool = question_bank[subject][class_num]
+
+        user_state[user_id].update({
+            "class": class_num,
+            "pool": random.sample(pool, len(pool)),
+            "index": 0,
+            "score_local": 0
+        })
 
         await send_question(query.message, user_id)
         return
 
-    # ответ
-    if user_id in user_state:
+    # =====================
+    # ANSWER
+    # =====================
+    if user_id in user_state and "pool" in user_state[user_id]:
+
         state = user_state[user_id]
         q = state["pool"][state["index"]]
 
         if data == q["a"]:
             update_score(user_id, True)
+            state["score_local"] += 1
             await query.message.reply_text("✅ Верно!")
         else:
             update_score(user_id, False)
@@ -185,38 +173,26 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await send_question(query.message, user_id)
 
 # =========================
-# QUESTION SENDER
+# SEND QUESTION
 # =========================
 async def send_question(message, user_id):
 
     state = user_state[user_id]
-    pool = state["pool"]
     i = state["index"]
+    pool = state["pool"]
 
     # конец теста
     if i >= len(pool):
 
-        stats = get_user_stats(user_id)
-
-        if stats:
-            score, c, w = stats
-            percent = round((c / (c + w)) * 100, 2) if (c + w) > 0 else 0
-
-            await message.reply_text(
-                "🏁 ТЕСТ ЗАВЕРШЕН\n\n"
-                f"🏆 Баллы: {score}\n"
-                f"✅ Правильных: {c}\n"
-                f"❌ Ошибок: {w}\n"
-                f"📊 Процент: {percent}%"
-            )
+        await message.reply_text(
+            f"🏁 Тест завершён!\n\n"
+            f"📊 Правильных: {state['score_local']} из {len(pool)}"
+        )
         return
 
     q = pool[i]
 
-    keyboard = [
-        [InlineKeyboardButton(opt, callback_data=opt)]
-        for opt in q["o"]
-    ]
+    keyboard = [[InlineKeyboardButton(o, callback_data=o)] for o in q["o"]]
 
     await message.reply_text(
         f"❓ {q['q']}",
@@ -224,55 +200,12 @@ async def send_question(message, user_id):
     )
 
 # =========================
-# TOP
-# =========================
-async def top(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
-    rows = get_top()
-
-    text = "🏆 ТОП игроков:\n\n"
-
-    for i, r in enumerate(rows, 1):
-        text += f"{i}. {r[0]} — {r[1]}\n"
-
-    await update.message.reply_text(text)
-
-# =========================
-# RESTART
-# =========================
-async def restart(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
-    user_id = update.effective_user.id
-
-    if user_id in user_state:
-        user_state[user_id]["index"] = 0
-
-    await update.message.reply_text("🔄 Тест перезапущен!")
-    await send_question(update.message, user_id)
-
-# =========================
-# EXPORT EXCEL
-# =========================
-async def export(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
-    file_stream = export_excel()
-
-    await update.message.reply_document(
-        document=file_stream,
-        filename="results.xlsx"
-    )
-
-# =========================
 # MAIN
 # =========================
 def main():
-
     app = ApplicationBuilder().token(TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("top", top))
-    app.add_handler(CommandHandler("restart", restart))
-    app.add_handler(CommandHandler("export", export))
     app.add_handler(CallbackQueryHandler(button))
 
     print("Bot started")
