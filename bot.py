@@ -2,23 +2,22 @@ import os
 import random
 import sqlite3
 import csv
+
 from telegram import (
     Update,
-    ReplyKeyboardMarkup,
     InlineKeyboardButton,
     InlineKeyboardMarkup
 )
+
 from telegram.ext import (
     ApplicationBuilder,
     CommandHandler,
-    MessageHandler,
     CallbackQueryHandler,
-    ContextTypes,
-    filters
+    ContextTypes
 )
 
 # =========================
-# CONFIG
+# TOKEN
 # =========================
 
 TOKEN = os.getenv("TOKEN")
@@ -56,7 +55,9 @@ subjects = {
 # =========================
 
 question_bank = {
+
     "Информатика": {
+
         "5": [
             {
                 "question": "Что такое компьютер?",
@@ -68,6 +69,7 @@ question_bank = {
                 ],
                 "answer": "Электронное устройство"
             },
+
             {
                 "question": "Что такое интернет?",
                 "options": [
@@ -108,26 +110,42 @@ question_bank = {
     },
 
     "Математика": {
+
         "5": [
             {
                 "question": "Сколько будет 2 + 2?",
-                "options": ["4", "5", "6", "7"],
+                "options": [
+                    "4",
+                    "5",
+                    "6",
+                    "7"
+                ],
                 "answer": "4"
             }
         ],
 
         "6": [
             {
-                "question": "Сколько будет 10 * 2?",
-                "options": ["20", "15", "30", "40"],
+                "question": "Сколько будет 10 × 2?",
+                "options": [
+                    "20",
+                    "15",
+                    "30",
+                    "40"
+                ],
                 "answer": "20"
             }
         ],
 
         "7": [
             {
-                "question": "Чему равен квадратный корень из 49?",
-                "options": ["7", "6", "8", "9"],
+                "question": "Чему равен корень из 49?",
+                "options": [
+                    "7",
+                    "6",
+                    "8",
+                    "9"
+                ],
                 "answer": "7"
             }
         ]
@@ -145,6 +163,7 @@ user_state = {}
 # =========================
 
 def add_user(user_id, username):
+
     cursor.execute("""
     INSERT OR IGNORE INTO users
     (user_id, username, score, correct_answers, wrong_answers)
@@ -153,15 +172,20 @@ def add_user(user_id, username):
 
     conn.commit()
 
+
 def update_score(user_id, correct):
+
     if correct:
+
         cursor.execute("""
         UPDATE users
         SET score = score + 1,
             correct_answers = correct_answers + 1
         WHERE user_id = ?
         """, (user_id,))
+
     else:
+
         cursor.execute("""
         UPDATE users
         SET wrong_answers = wrong_answers + 1
@@ -170,7 +194,9 @@ def update_score(user_id, correct):
 
     conn.commit()
 
+
 def get_user_result(user_id):
+
     cursor.execute("""
     SELECT score, correct_answers, wrong_answers
     FROM users
@@ -179,11 +205,13 @@ def get_user_result(user_id):
 
     return cursor.fetchone()
 
+
 # =========================
 # EXPORT CSV
 # =========================
 
 def export_results():
+
     cursor.execute("""
     SELECT username, score, correct_answers, wrong_answers
     FROM users
@@ -191,7 +219,13 @@ def export_results():
 
     rows = cursor.fetchall()
 
-    with open("results.csv", "w", newline="", encoding="utf-8") as file:
+    with open(
+        "results.csv",
+        "w",
+        newline="",
+        encoding="utf-8"
+    ) as file:
+
         writer = csv.writer(file)
 
         writer.writerow([
@@ -209,17 +243,19 @@ def export_results():
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
-    user = update.message.from_user
+    user = update.effective_user
 
     add_user(user.id, user.username)
 
     keyboard = [
+
         [
             InlineKeyboardButton(
                 "Информатика",
                 callback_data="Информатика"
             )
         ],
+
         [
             InlineKeyboardButton(
                 "Математика",
@@ -236,7 +272,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 # =========================
-# SUBJECT SELECT
+# BUTTON HANDLER
 # =========================
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -247,7 +283,10 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = query.from_user.id
     text = query.data
 
+    # =====================
     # SUBJECT
+    # =====================
+
     if text in subjects:
 
         user_state[user_id] = {
@@ -257,6 +296,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         keyboard = []
 
         for class_name in subjects[text]:
+
             keyboard.append([
                 InlineKeyboardButton(
                     class_name,
@@ -271,7 +311,10 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         return
 
+    # =====================
     # CLASS
+    # =====================
+
     if user_id in user_state:
 
         subject = user_state[user_id]["subject"]
@@ -280,7 +323,45 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
             user_state[user_id]["class"] = text
 
-            await send_question(query.message, user_id)
+            await send_question(
+                query.message,
+                user_id
+            )
+
+            return
+
+    # =====================
+    # ANSWER
+    # =====================
+
+    if (
+        user_id in user_state and
+        "question" in user_state[user_id]
+    ):
+
+        q = user_state[user_id]["question"]
+
+        if text == q["answer"]:
+
+            update_score(user_id, True)
+
+            await query.message.reply_text(
+                "✅ Правильно!"
+            )
+
+        else:
+
+            update_score(user_id, False)
+
+            await query.message.reply_text(
+                f"❌ Неправильно!\n"
+                f"Правильный ответ: {q['answer']}"
+            )
+
+        await send_question(
+            query.message,
+            user_id
+        )
 
 # =========================
 # SEND QUESTION
@@ -300,6 +381,7 @@ async def send_question(message, user_id):
     keyboard = []
 
     for option in q["options"]:
+
         keyboard.append([
             InlineKeyboardButton(
                 option,
@@ -313,58 +395,21 @@ async def send_question(message, user_id):
     )
 
 # =========================
-# ANSWER HANDLER
-# =========================
-
-async def answer_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
-    query = update.callback_query
-    await query.answer()
-
-    user_id = query.from_user.id
-    answer = query.data
-
-    if user_id not in user_state:
-        return
-
-    if "question" not in user_state[user_id]:
-        return
-
-    q = user_state[user_id]["question"]
-
-    if answer == q["answer"]:
-
-        update_score(user_id, True)
-
-        await query.message.reply_text(
-            "✅ Правильно!"
-        )
-
-    else:
-
-        update_score(user_id, False)
-
-        await query.message.reply_text(
-            f"❌ Неправильно!\n"
-            f"Правильный ответ: {q['answer']}"
-        )
-
-    await send_question(query.message, user_id)
-
-# =========================
-# RESULT COMMAND
+# RESULT
 # =========================
 
 async def result(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
-    user_id = update.message.from_user.id
+    user_id = update.effective_user.id
 
     result_data = get_user_result(user_id)
 
     if not result_data:
+
         await update.message.reply_text(
             "Нет данных."
         )
+
         return
 
     score, correct, wrong = result_data
@@ -374,7 +419,11 @@ async def result(update: Update, context: ContextTypes.DEFAULT_TYPE):
     percent = 0
 
     if total > 0:
-        percent = round((correct / total) * 100, 2)
+
+        percent = round(
+            (correct / total) * 100,
+            2
+        )
 
     text = (
         f"📊 Ваша статистика:\n\n"
@@ -387,7 +436,7 @@ async def result(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(text)
 
 # =========================
-# EXPORT COMMAND
+# EXPORT
 # =========================
 
 async def export(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -406,7 +455,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     text = (
         "📖 Команды бота:\n\n"
-        "/start - запуск\n"
+        "/start - запуск бота\n"
         "/result - статистика\n"
         "/export - экспорт CSV\n"
         "/help - помощь"
@@ -418,36 +467,37 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # MAIN
 # =========================
 
-async def main():
+def main():
 
     app = ApplicationBuilder().token(TOKEN).build()
 
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("result", result))
-    app.add_handler(CommandHandler("export", export))
-    app.add_handler(CommandHandler("help", help_command))
-
     app.add_handler(
-        CallbackQueryHandler(
-            button_handler,
-            pattern="^(Информатика|Математика|5|6|7)$"
-        )
+        CommandHandler("start", start)
     )
 
     app.add_handler(
-        CallbackQueryHandler(answer_handler)
+        CommandHandler("result", result)
+    )
+
+    app.add_handler(
+        CommandHandler("export", export)
+    )
+
+    app.add_handler(
+        CommandHandler("help", help_command)
+    )
+
+    app.add_handler(
+        CallbackQueryHandler(button_handler)
     )
 
     print("Bot started")
 
-    await app.run_polling()
+    app.run_polling()
 
 # =========================
 # RUN
 # =========================
 
 if __name__ == "__main__":
-
-    import asyncio
-
-    asyncio.run(main())
+    main()
