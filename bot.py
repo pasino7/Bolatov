@@ -1,14 +1,11 @@
 import os
 import random
 import sqlite3
-import csv
+from io import BytesIO
 
-from telegram import (
-    Update,
-    InlineKeyboardButton,
-    InlineKeyboardMarkup
-)
+from openpyxl import Workbook
 
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     ApplicationBuilder,
     CommandHandler,
@@ -17,15 +14,13 @@ from telegram.ext import (
 )
 
 # =========================
-# TOKEN
+# TOKEN (RAILWAY ENV)
 # =========================
-
-TOKEN = os.getenv("TOKEN")
+TOKEN = os.environ.get("TOKEN")
 
 # =========================
 # DATABASE
 # =========================
-
 conn = sqlite3.connect("quiz.db", check_same_thread=False)
 cursor = conn.cursor()
 
@@ -38,129 +33,39 @@ CREATE TABLE IF NOT EXISTS users (
     wrong_answers INTEGER DEFAULT 0
 )
 """)
-
 conn.commit()
-
-# =========================
-# SUBJECTS
-# =========================
-
-subjects = {
-    "Информатика": ["5", "6", "7"],
-    "Математика": ["5", "6", "7"]
-}
 
 # =========================
 # QUESTIONS
 # =========================
-
 question_bank = {
-    "Информатика": {
-        "5": [
-            {
-                "question": "Что такое компьютер?",
-                "options": ["Электронное устройство", "Игрушка", "Телефон", "Книга"],
-                "answer": "Электронное устройство"
-            },
-            {
-                "question": "Что такое интернет?",
-                "options": ["Сеть", "Игра", "Файл", "Папка"],
-                "answer": "Сеть"
-            },
-            {
-                "question": "Что делает клавиатура?",
-                "options": ["Устройство ввода", "Экран", "Принтер", "Память"],
-                "answer": "Устройство ввода"
-            }
-        ],
-
-        "6": [
-            {
-                "question": "Что такое Windows?",
-                "options": ["Операционная система", "Игра", "Файл", "Браузер"],
-                "answer": "Операционная система"
-            },
-            {
-                "question": "Что такое браузер?",
-                "options": ["Программа для интернета", "Игра", "Файл", "Антивирус"],
-                "answer": "Программа для интернета"
-            }
-        ],
-
-        "7": [
-            {
-                "question": "Что такое Python?",
-                "options": ["Язык программирования", "Игра", "Файл", "Монитор"],
-                "answer": "Язык программирования"
-            },
-            {
-                "question": "Что такое цикл?",
-                "options": ["Повтор действий", "Удаление файлов", "Экран", "Вирус"],
-                "answer": "Повтор действий"
-            }
-        ]
-    },
-
-    "Математика": {
-        "5": [
-            {
-                "question": "Сколько будет 2 + 2?",
-                "options": ["4", "5", "6", "7"],
-                "answer": "4"
-            },
-            {
-                "question": "Сколько будет 5 + 7?",
-                "options": ["12", "11", "13", "10"],
-                "answer": "12"
-            }
-        ],
-
-        "6": [
-            {
-                "question": "Сколько будет 3 × 4?",
-                "options": ["12", "10", "14", "11"],
-                "answer": "12"
-            },
-            {
-                "question": "Сколько будет 18 ÷ 2?",
-                "options": ["9", "8", "7", "10"],
-                "answer": "9"
-            }
-        ],
-
-        "7": [
-            {
-                "question": "Чему равно 2²?",
-                "options": ["4", "2", "6", "8"],
-                "answer": "4"
-            },
-            {
-                "question": "Чему равно 3²?",
-                "options": ["9", "6", "12", "8"],
-                "answer": "9"
-            }
-        ]
-    }
+    "easy": [
+        {"q": "2 + 2 = ?", "o": ["4", "5", "6"], "a": "4"},
+        {"q": "5 + 3 = ?", "o": ["8", "7", "6"], "a": "8"},
+    ],
+    "medium": [
+        {"q": "12 × 2 = ?", "o": ["24", "20", "22"], "a": "24"},
+        {"q": "18 ÷ 2 = ?", "o": ["9", "8", "7"], "a": "9"},
+    ],
+    "hard": [
+        {"q": "√81 = ?", "o": ["9", "8", "7"], "a": "9"},
+        {"q": "15² = ?", "o": ["225", "200", "210"], "a": "225"},
+    ]
 }
 
 # =========================
 # USER STATE
 # =========================
-
 user_state = {}
 
 # =========================
 # DB FUNCTIONS
 # =========================
-
 def add_user(user_id, username):
     cursor.execute("""
-    INSERT OR IGNORE INTO users
-    (user_id, username, score, correct_answers, wrong_answers)
-    VALUES (?, ?, 0, 0, 0)
+    INSERT OR IGNORE INTO users VALUES (?, ?, 0, 0, 0)
     """, (user_id, username))
     conn.commit()
-
 
 def update_score(user_id, correct):
     if correct:
@@ -178,8 +83,16 @@ def update_score(user_id, correct):
         """, (user_id,))
     conn.commit()
 
+def get_top():
+    cursor.execute("""
+    SELECT username, score
+    FROM users
+    ORDER BY score DESC
+    LIMIT 10
+    """)
+    return cursor.fetchall()
 
-def get_user_result(user_id):
+def get_user_stats(user_id):
     cursor.execute("""
     SELECT score, correct_answers, wrong_answers
     FROM users
@@ -188,153 +101,9 @@ def get_user_result(user_id):
     return cursor.fetchone()
 
 # =========================
-# START
+# EXCEL EXPORT (RAILWAY SAFE)
 # =========================
-
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
-    user = update.effective_user
-    add_user(user.id, user.username)
-
-    keyboard = [
-        [InlineKeyboardButton("Информатика", callback_data="Информатика")],
-        [InlineKeyboardButton("Математика", callback_data="Математика")]
-    ]
-
-    await update.message.reply_text(
-        "📚 Выберите предмет:",
-        reply_markup=InlineKeyboardMarkup(keyboard)
-    )
-
-# =========================
-# BUTTON HANDLER
-# =========================
-
-async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
-    query = update.callback_query
-    await query.answer()
-
-    user_id = query.from_user.id
-    text = query.data
-
-    # выбор предмета
-    if text in subjects:
-        user_state[user_id] = {"subject": text}
-        keyboard = [
-            [InlineKeyboardButton(c, callback_data=c)]
-            for c in subjects[text]
-        ]
-
-        await query.message.reply_text(
-            "🏫 Выберите класс:",
-            reply_markup=InlineKeyboardMarkup(keyboard)
-        )
-        return
-
-    # выбор класса
-    if user_id in user_state and text in subjects[user_state[user_id]["subject"]]:
-
-        subject = user_state[user_id]["subject"]
-
-        # 🎯 СОЗДАЁМ ПУЛ ВОПРОСОВ (ВАЖНО)
-        pool = question_bank[subject][text]
-        random.shuffle(pool)
-
-        user_state[user_id]["class"] = text
-        user_state[user_id]["pool"] = pool
-        user_state[user_id]["index"] = 0
-
-        await send_question(query.message, user_id)
-        return
-
-    # ответ
-    if user_id in user_state and "pool" in user_state[user_id]:
-
-        q = user_state[user_id]["pool"][user_state[user_id]["index"]]
-
-        if text == q["answer"]:
-            update_score(user_id, True)
-            await query.message.reply_text("✅ Правильно!")
-        else:
-            update_score(user_id, False)
-            await query.message.reply_text(f"❌ Неправильно!\nПравильный ответ: {q['answer']}")
-
-        user_state[user_id]["index"] += 1
-
-        await send_question(query.message, user_id)
-
-# =========================
-# SEND QUESTION
-# =========================
-
-async def send_question(message, user_id):
-
-    index = user_state[user_id]["index"]
-    pool = user_state[user_id]["pool"]
-
-    # 🏁 КОНЕЦ ТЕСТА
-    if index >= len(pool):
-
-        result_data = get_user_result(user_id)
-        score, correct, wrong = result_data
-
-        total = correct + wrong
-        percent = round((correct / total) * 100, 2) if total > 0 else 0
-
-        await message.reply_text(
-            "🏁 ТЕСТ ЗАВЕРШЁН!\n\n"
-            f"🏆 Баллы: {score}\n"
-            f"✅ Правильных: {correct}\n"
-            f"❌ Ошибок: {wrong}\n"
-            f"📈 Процент: {percent}%"
-        )
-        return
-
-    q = pool[index]
-
-    keyboard = [
-        [InlineKeyboardButton(opt, callback_data=opt)]
-        for opt in q["options"]
-    ]
-
-    await message.reply_text(
-        f"❓ {q['question']}",
-        reply_markup=InlineKeyboardMarkup(keyboard)
-    )
-
-# =========================
-# RESULT COMMAND
-# =========================
-
-async def result(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
-    user_id = update.effective_user.id
-    data = get_user_result(user_id)
-
-    if not data:
-        await update.message.reply_text("Нет данных.")
-        return
-
-    score, correct, wrong = data
-    total = correct + wrong
-
-    percent = round((correct / total) * 100, 2) if total > 0 else 0
-
-    await update.message.reply_text(
-        f"📊 Статистика:\n\n"
-        f"🏆 Баллы: {score}\n"
-        f"✅ Правильных: {correct}\n"
-        f"❌ Ошибок: {wrong}\n"
-        f"📈 Процент: {percent}%"
-    )
-
-# =========================
-# EXPORT
-# =========================
-
-async def export(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
+def export_excel():
     cursor.execute("""
     SELECT username, score, correct_answers, wrong_answers
     FROM users
@@ -342,25 +111,169 @@ async def export(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     rows = cursor.fetchall()
 
-    with open("results.csv", "w", newline="", encoding="utf-8") as file:
-        writer = csv.writer(file)
-        writer.writerow(["Username", "Score", "Correct", "Wrong"])
-        writer.writerows(rows)
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Results"
 
-    await update.message.reply_document(open("results.csv", "rb"))
+    ws.append(["Username", "Score", "Correct", "Wrong"])
+
+    for r in rows:
+        ws.append(r)
+
+    file_stream = BytesIO()
+    wb.save(file_stream)
+    file_stream.seek(0)
+
+    return file_stream
+
+# =========================
+# START
+# =========================
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+    user = update.effective_user
+    add_user(user.id, user.username)
+
+    keyboard = [
+        [InlineKeyboardButton("Легкий", callback_data="easy")],
+        [InlineKeyboardButton("Средний", callback_data="medium")],
+        [InlineKeyboardButton("Сложный", callback_data="hard")]
+    ]
+
+    await update.message.reply_text(
+        "🎮 Выбери сложность:",
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
+
+# =========================
+# BUTTON HANDLER
+# =========================
+async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+    query = update.callback_query
+    await query.answer()
+
+    user_id = query.from_user.id
+    data = query.data
+
+    # выбор сложности
+    if data in question_bank:
+        pool = random.sample(question_bank[data], len(question_bank[data]))
+
+        user_state[user_id] = {
+            "level": data,
+            "pool": pool,
+            "index": 0
+        }
+
+        await send_question(query.message, user_id)
+        return
+
+    # ответ
+    if user_id in user_state:
+        state = user_state[user_id]
+        q = state["pool"][state["index"]]
+
+        if data == q["a"]:
+            update_score(user_id, True)
+            await query.message.reply_text("✅ Верно!")
+        else:
+            update_score(user_id, False)
+            await query.message.reply_text(f"❌ Неверно! Ответ: {q['a']}")
+
+        state["index"] += 1
+        await send_question(query.message, user_id)
+
+# =========================
+# QUESTION SENDER
+# =========================
+async def send_question(message, user_id):
+
+    state = user_state[user_id]
+    pool = state["pool"]
+    i = state["index"]
+
+    # конец теста
+    if i >= len(pool):
+
+        stats = get_user_stats(user_id)
+
+        if stats:
+            score, c, w = stats
+            percent = round((c / (c + w)) * 100, 2) if (c + w) > 0 else 0
+
+            await message.reply_text(
+                "🏁 ТЕСТ ЗАВЕРШЕН\n\n"
+                f"🏆 Баллы: {score}\n"
+                f"✅ Правильных: {c}\n"
+                f"❌ Ошибок: {w}\n"
+                f"📊 Процент: {percent}%"
+            )
+        return
+
+    q = pool[i]
+
+    keyboard = [
+        [InlineKeyboardButton(opt, callback_data=opt)]
+        for opt in q["o"]
+    ]
+
+    await message.reply_text(
+        f"❓ {q['q']}",
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
+
+# =========================
+# TOP
+# =========================
+async def top(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+    rows = get_top()
+
+    text = "🏆 ТОП игроков:\n\n"
+
+    for i, r in enumerate(rows, 1):
+        text += f"{i}. {r[0]} — {r[1]}\n"
+
+    await update.message.reply_text(text)
+
+# =========================
+# RESTART
+# =========================
+async def restart(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+    user_id = update.effective_user.id
+
+    if user_id in user_state:
+        user_state[user_id]["index"] = 0
+
+    await update.message.reply_text("🔄 Тест перезапущен!")
+    await send_question(update.message, user_id)
+
+# =========================
+# EXPORT EXCEL
+# =========================
+async def export(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+    file_stream = export_excel()
+
+    await update.message.reply_document(
+        document=file_stream,
+        filename="results.xlsx"
+    )
 
 # =========================
 # MAIN
 # =========================
-
 def main():
 
     app = ApplicationBuilder().token(TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("result", result))
+    app.add_handler(CommandHandler("top", top))
+    app.add_handler(CommandHandler("restart", restart))
     app.add_handler(CommandHandler("export", export))
-    app.add_handler(CallbackQueryHandler(button_handler))
+    app.add_handler(CallbackQueryHandler(button))
 
     print("Bot started")
     app.run_polling()
