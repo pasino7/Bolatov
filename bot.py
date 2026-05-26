@@ -51,13 +51,11 @@ subjects = {
 }
 
 # =========================
-# QUESTIONS (РАСШИРЕННЫЕ)
+# QUESTIONS
 # =========================
 
 question_bank = {
-
     "Информатика": {
-
         "5": [
             {
                 "question": "Что такое компьютер?",
@@ -73,16 +71,6 @@ question_bank = {
                 "question": "Что делает клавиатура?",
                 "options": ["Устройство ввода", "Экран", "Принтер", "Память"],
                 "answer": "Устройство ввода"
-            },
-            {
-                "question": "Что делает мышь?",
-                "options": ["Управляет курсором", "Печатает", "Сохраняет", "Удаляет"],
-                "answer": "Управляет курсором"
-            },
-            {
-                "question": "Что такое файл?",
-                "options": ["Хранилище информации", "Монитор", "Процессор", "Сайт"],
-                "answer": "Хранилище информации"
             }
         ],
 
@@ -96,16 +84,6 @@ question_bank = {
                 "question": "Что такое браузер?",
                 "options": ["Программа для интернета", "Игра", "Файл", "Антивирус"],
                 "answer": "Программа для интернета"
-            },
-            {
-                "question": "Что такое антивирус?",
-                "options": ["Защита от вирусов", "Игра", "ОС", "Файл"],
-                "answer": "Защита от вирусов"
-            },
-            {
-                "question": "Что такое сервер?",
-                "options": ["Компьютер для хранения данных", "Монитор", "Принтер", "Мышь"],
-                "answer": "Компьютер для хранения данных"
             }
         ],
 
@@ -116,25 +94,14 @@ question_bank = {
                 "answer": "Язык программирования"
             },
             {
-                "question": "Что такое переменная?",
-                "options": ["Хранение данных", "Ошибка", "Экран", "Файл"],
-                "answer": "Хранение данных"
-            },
-            {
-                "question": "Что делает цикл?",
-                "options": ["Повторяет действия", "Удаляет файлы", "Выключает ПК", "Открывает сайт"],
-                "answer": "Повторяет действия"
-            },
-            {
-                "question": "Что такое алгоритм?",
-                "options": ["Последовательность действий", "Файл", "Игра", "Вирус"],
-                "answer": "Последовательность действий"
+                "question": "Что такое цикл?",
+                "options": ["Повтор действий", "Удаление файлов", "Экран", "Вирус"],
+                "answer": "Повтор действий"
             }
         ]
     },
 
     "Математика": {
-
         "5": [
             {
                 "question": "Сколько будет 2 + 2?",
@@ -145,25 +112,10 @@ question_bank = {
                 "question": "Сколько будет 5 + 7?",
                 "options": ["12", "11", "13", "10"],
                 "answer": "12"
-            },
-            {
-                "question": "Сколько будет 9 - 3?",
-                "options": ["6", "5", "7", "8"],
-                "answer": "6"
-            },
-            {
-                "question": "Сколько будет 10 - 4?",
-                "options": ["6", "5", "7", "8"],
-                "answer": "6"
             }
         ],
 
         "6": [
-            {
-                "question": "Сколько будет 10 × 2?",
-                "options": ["20", "15", "30", "40"],
-                "answer": "20"
-            },
             {
                 "question": "Сколько будет 3 × 4?",
                 "options": ["12", "10", "14", "11"],
@@ -177,11 +129,6 @@ question_bank = {
         ],
 
         "7": [
-            {
-                "question": "Чему равен корень из 49?",
-                "options": ["7", "6", "8", "9"],
-                "answer": "7"
-            },
             {
                 "question": "Чему равно 2²?",
                 "options": ["4", "2", "6", "8"],
@@ -203,72 +150,42 @@ question_bank = {
 user_state = {}
 
 # =========================
-# DATABASE FUNCTIONS
+# DB FUNCTIONS
 # =========================
 
 def add_user(user_id, username):
-
     cursor.execute("""
     INSERT OR IGNORE INTO users
     (user_id, username, score, correct_answers, wrong_answers)
     VALUES (?, ?, 0, 0, 0)
     """, (user_id, username))
-
     conn.commit()
 
 
 def update_score(user_id, correct):
-
     if correct:
-
         cursor.execute("""
         UPDATE users
         SET score = score + 1,
             correct_answers = correct_answers + 1
         WHERE user_id = ?
         """, (user_id,))
-
     else:
-
         cursor.execute("""
         UPDATE users
         SET wrong_answers = wrong_answers + 1
         WHERE user_id = ?
         """, (user_id,))
-
     conn.commit()
 
 
 def get_user_result(user_id):
-
     cursor.execute("""
     SELECT score, correct_answers, wrong_answers
     FROM users
     WHERE user_id = ?
     """, (user_id,))
-
     return cursor.fetchone()
-
-# =========================
-# EXPORT CSV
-# =========================
-
-def export_results():
-
-    cursor.execute("""
-    SELECT username, score, correct_answers, wrong_answers
-    FROM users
-    """)
-
-    rows = cursor.fetchall()
-
-    with open("results.csv", "w", newline="", encoding="utf-8") as file:
-
-        writer = csv.writer(file)
-
-        writer.writerow(["Username", "Score", "Correct", "Wrong"])
-
-        writer.writerows(rows)
 
 # =========================
 # START
@@ -277,7 +194,6 @@ def export_results():
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     user = update.effective_user
-
     add_user(user.id, user.username)
 
     keyboard = [
@@ -302,10 +218,9 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = query.from_user.id
     text = query.data
 
+    # выбор предмета
     if text in subjects:
-
         user_state[user_id] = {"subject": text}
-
         keyboard = [
             [InlineKeyboardButton(c, callback_data=c)]
             for c in subjects[text]
@@ -317,20 +232,26 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    if user_id in user_state:
+    # выбор класса
+    if user_id in user_state and text in subjects[user_state[user_id]["subject"]]:
 
         subject = user_state[user_id]["subject"]
 
-        if text in subjects[subject]:
+        # 🎯 СОЗДАЁМ ПУЛ ВОПРОСОВ (ВАЖНО)
+        pool = question_bank[subject][text]
+        random.shuffle(pool)
 
-            user_state[user_id]["class"] = text
+        user_state[user_id]["class"] = text
+        user_state[user_id]["pool"] = pool
+        user_state[user_id]["index"] = 0
 
-            await send_question(query.message, user_id)
-            return
+        await send_question(query.message, user_id)
+        return
 
-    if user_id in user_state and "question" in user_state[user_id]:
+    # ответ
+    if user_id in user_state and "pool" in user_state[user_id]:
 
-        q = user_state[user_id]["question"]
+        q = user_state[user_id]["pool"][user_state[user_id]["index"]]
 
         if text == q["answer"]:
             update_score(user_id, True)
@@ -338,6 +259,8 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             update_score(user_id, False)
             await query.message.reply_text(f"❌ Неправильно!\nПравильный ответ: {q['answer']}")
+
+        user_state[user_id]["index"] += 1
 
         await send_question(query.message, user_id)
 
@@ -347,12 +270,28 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def send_question(message, user_id):
 
-    subject = user_state[user_id]["subject"]
-    class_name = user_state[user_id]["class"]
+    index = user_state[user_id]["index"]
+    pool = user_state[user_id]["pool"]
 
-    q = random.choice(question_bank[subject][class_name])
+    # 🏁 КОНЕЦ ТЕСТА
+    if index >= len(pool):
 
-    user_state[user_id]["question"] = q
+        result_data = get_user_result(user_id)
+        score, correct, wrong = result_data
+
+        total = correct + wrong
+        percent = round((correct / total) * 100, 2) if total > 0 else 0
+
+        await message.reply_text(
+            "🏁 ТЕСТ ЗАВЕРШЁН!\n\n"
+            f"🏆 Баллы: {score}\n"
+            f"✅ Правильных: {correct}\n"
+            f"❌ Ошибок: {wrong}\n"
+            f"📈 Процент: {percent}%"
+        )
+        return
+
+    q = pool[index]
 
     keyboard = [
         [InlineKeyboardButton(opt, callback_data=opt)]
@@ -365,13 +304,12 @@ async def send_question(message, user_id):
     )
 
 # =========================
-# RESULT
+# RESULT COMMAND
 # =========================
 
 async def result(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     user_id = update.effective_user.id
-
     data = get_user_result(user_id)
 
     if not data:
@@ -397,7 +335,17 @@ async def result(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def export(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
-    export_results()
+    cursor.execute("""
+    SELECT username, score, correct_answers, wrong_answers
+    FROM users
+    """)
+
+    rows = cursor.fetchall()
+
+    with open("results.csv", "w", newline="", encoding="utf-8") as file:
+        writer = csv.writer(file)
+        writer.writerow(["Username", "Score", "Correct", "Wrong"])
+        writer.writerows(rows)
 
     await update.message.reply_document(open("results.csv", "rb"))
 
